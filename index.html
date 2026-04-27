@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>1.000s Challenge</title>
+
+<script src="https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.umd.min.js"></script>
+
+<style>
+body {
+  margin: 0;
+  height: 100vh;
+  background: #000;
+  color: #fff;
+  font-family: Arial, sans-serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+.app {
+  width: 100%;
+  max-width: 420px;
+  padding: 24px;
+}
+h1 { font-size: 56px; }
+button {
+  width: 100%;
+  padding: 18px 28px;
+  border-radius: 999px;
+  border: none;
+  background: #00ff88;
+  color: #000;
+  font-size: 18px;
+  font-weight: bold;
+  cursor: pointer;
+  margin-top: 12px;
+}
+#tapBtn {
+  display: none;
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  background: white;
+  color: black;
+}
+.result {
+  margin-top: 24px;
+  font-size: 20px;
+  line-height: 1.5;
+}
+.small {
+  color: #aaa;
+  font-size: 14px;
+  word-break: break-all;
+}
+</style>
+</head>
+
+<body>
+<div class="app">
+  <h1>1.000s</h1>
+  <p>99% people fail this. Can you hit exactly 1 second?</p>
+
+  <button id="startBtn">Start Challenge</button>
+  <button id="tapBtn">TAP</button>
+
+  <div class="result" id="result"></div>
+
+  <button id="connectBtn">Connect Wallet</button>
+  <button id="saveBtn" disabled>Save Score on Base</button>
+
+  <div class="result small" id="wallet"></div>
+  <div class="result small" id="tx"></div>
+</div>
+
+<script>
+let startTime = 0;
+let lastError = null;
+let userAddress = null;
+
+const BASE_CHAIN_ID = "0x2105"; // Base mainnet
+const BASE_PARAMS = {
+  chainId: BASE_CHAIN_ID,
+  chainName: "Base",
+  nativeCurrency: {
+    name: "Ether",
+    symbol: "ETH",
+    decimals: 18
+  },
+  rpcUrls: ["https://mainnet.base.org"],
+  blockExplorerUrls: ["https://basescan.org"]
+};
+
+const startBtn = document.getElementById("startBtn");
+const tapBtn = document.getElementById("tapBtn");
+const result = document.getElementById("result");
+const connectBtn = document.getElementById("connectBtn");
+const saveBtn = document.getElementById("saveBtn");
+const wallet = document.getElementById("wallet");
+const tx = document.getElementById("tx");
+
+startBtn.onclick = () => {
+  result.innerHTML = "Get ready...";
+  startBtn.style.display = "none";
+  saveBtn.disabled = true;
+  tx.innerHTML = "";
+
+  setTimeout(() => {
+    result.innerHTML = "TAP NOW";
+    tapBtn.style.display = "inline-block";
+    startTime = performance.now();
+  }, Math.random() * 1200 + 600);
+};
+
+tapBtn.onclick = () => {
+  const diff = (performance.now() - startTime) / 1000;
+  const error = Math.abs(1 - diff);
+  lastError = error;
+
+  tapBtn.style.display = "none";
+  startBtn.style.display = "inline-block";
+
+  result.innerHTML = `
+    You: ${diff.toFixed(3)}s<br>
+    Error: ${error.toFixed(3)}s<br>
+    ${error < 0.01 ? "🔥 INSANE" : error < 0.05 ? "😮 CLOSE" : "❌ MISS"}
+  `;
+
+  if (userAddress) saveBtn.disabled = false;
+};
+
+connectBtn.onclick = async () => {
+  if (!window.ethereum) {
+    alert("Install MetaMask or Coinbase Wallet");
+    return;
+  }
+
+  const accounts = await window.ethereum.request({
+    method: "eth_requestAccounts"
+  });
+
+  userAddress = accounts[0];
+
+  wallet.innerHTML = `Wallet connected:<br>${userAddress}`;
+  connectBtn.innerText = "Wallet Connected";
+
+  if (lastError !== null) saveBtn.disabled = false;
+};
+
+async function switchToBase() {
+  try {
+    await window.ethereum.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: BASE_CHAIN_ID }]
+    });
+  } catch (err) {
+    if (err.code === 4902) {
+      await window.ethereum.request({
+        method: "wallet_addEthereumChain",
+        params: [BASE_PARAMS]
+      });
+    } else {
+      throw err;
+    }
+  }
+}
+
+saveBtn.onclick = async () => {
+  if (!userAddress || lastError === null) return;
+
+  try {
+    await switchToBase();
+
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+
+    const data = ethers.hexlify(
+      ethers.toUtf8Bytes(`1.000s score | error=${lastError.toFixed(3)}s`)
+    );
+
+    const sentTx = await signer.sendTransaction({
+      to: userAddress,
+      value: 0,
+      data
+    });
+
+    tx.innerHTML = `
+      Saved on Base ✅<br>
+      <a style="color:#00ff88" target="_blank" href="https://basescan.org/tx/${sentTx.hash}">
+        View transaction
+      </a>
+    `;
+  } catch (err) {
+    console.error(err);
+    alert("Transaction failed or cancelled");
+  }
+};
+</script>
+</body>
+</html>
